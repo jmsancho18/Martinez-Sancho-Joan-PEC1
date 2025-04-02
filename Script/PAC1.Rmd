@@ -69,7 +69,7 @@ library(dplyr)
 library(tidyverse)
 library(SummarizedExperiment)
 # LLlegim l'arxiu de dades que volem analitzar
-data <- readLines("Dades/ST000688_AN001061.txt")
+data <- readLines("C:/Users/34674/Desktop/UOC/Analisis Omiques/PAC/Martinez-Sancho-Joan-PEC1/Dades/ST000688_AN001061.txt")
 
 ## Les dades de metabolòmica comencen a la fila 124 i acaben a la 288
 # Creem matriu de dades de metabolòmica (filas 124-288)
