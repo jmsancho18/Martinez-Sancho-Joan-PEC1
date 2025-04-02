@@ -1,0 +1,376 @@
+---
+output: 
+  pdf_document:
+    latex_engine: pdflatex
+
+header-includes:
+   - \usepackage[utf8]{inputenc}
+
+---
+
+
+
+
+\pagebreak
+
+\begin{center}
+\Huge
+\vspace*{0.8cm}
+
+\textbf{PAC Joan MArtinez Sancho}
+  
+\vspace*{0.8cm}
+    
+  \LARGE
+    \textbf{`r format(Sys.Date(), "%d/%m/%y")`}
+
+\end{center}
+
+\pagebreak
+
+\tableofcontents
+\addtocontents{toc}{\setcounter{tocdepth}{4}}
+
+
+
+\pagebreak
+
+
+## 1. Introducció
+
+Per a la resolució d'aquesta pràctica s'ha seleccionat el dataset a partir de la pàgina web **metabolomicsWorkbench**. El dataset seleccionat correspon a l'experiment amb codi **ST000688**, en aquest cas en concret treballarem amb les dades que corresponen a **MS: C18 NEGATIVE ION MODE**. 
+
+L'experiment en qüestió es fonamenta sobre la idea de que el metabolisme està implicat en la neurodegeneració, d'aquesta manera l'anàlisis de metabolòmica permetrà definir la relació entre l'expresió gènica, els metabòlits i el dany axonal en l'esclerosis múltiple progressiva.
+
+He seleccionat aquest experiment perquè hi ha un grup de l'institut de recerca d'on treballo (IDIBGI) que estudia l'esclerosis múltiple i últimament he treballat amb ells.
+
+
+### 1.1. Objectius
+
+L'objectiu principal de la pràctica és seleccionar un dataset de *metabolòmica*, crear un objecte de classe **SummarizedExperiment** i realitzar un anàlisis exploratori d'aquest dataset.
+
+L'objectiu secundari és intentar replicar alguns dels resultats de l'anàlisis que es va realitzar en el seu moment, com poden ser el gràfic d'abundància relativa o bé el VolcanoPlot.
+
+## 2. Materials i Mètodes
+
+Les dades amb les que es treballarà es descarregaran de la pàgina web de [**metabolomicsWorkbench**](https://www.metabolomicsworkbench.org/data/DRCCMetadata.php?Mode=Study&StudyID=ST000688&StudyType=MS&ResultType=1), corresponen a l'experiment ST000688 i es tractaran les dades **C18 NEGATIVE ION MODE**. Es llegiràn les dades, les quals provenen en format txt i es crearà un objecte SummarizedExperiment, el qual contindrà les dades de l'experiment, informació sobre les covariables, i altres aspectes de l'experiment.
+
+L'exploració es portarà a terme seguint les activitats que s'han realitzat durant el curs. D'aquesta manera consistirà en, l'anàlisis univariant de les dades, mitjançant boxplots per estudiar la forma general dels mateixos. Anàlisis multivariant mitjançant l'Anàlisis de Components Principals i Agrupament Geràquic, per a determinar si els grups que apareixen semblen relacionar-se amb les fonts de variabilitat de l'estudi. I finalment es realitzarà un boxplot de l'abundància relativa en logaritmes (replicant l'anàlisis de l'experiment) simulant la funció **Rlaplots** (no és operativa actualment, però es pot treure la informació del codi) i es realitzarà un VolcanoPlot per a determinar quins biomarcadors estan diferencialment expressats entre BMS i SPMS.
+
+
+## 3. Resultats
+
+### 3.1. Obtenció de dades
+
+Podeu trobar el codi de la obtenció de dades en el següent [Github] (https://github.com/jmsancho18/Martinez-Sancho-Joan-PEC1.git). Aqui podeu veure per exemple la matriu de dades de metabòlits (no tota, nomes algunes columnes i files) i les seves metadades. Però també s'han descarregat les dades de les covariables i informació de l'experiment.
+```{r echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(SummarizedExperiment)
+# LLlegim l'arxiu de dades que volem analitzar
+data <- readLines("C:/Users/41583789L/Desktop/UOC_2nQ/Anàlisis dades òmiques/PAC1/Dades/ST000688_AN001061.txt")
+
+## Les dades de metabolòmica comencen a la fila 124 i acaben a la 288
+# Creem matriu de dades de metabolòmica (filas 124-288)
+data_matrix <- read.table(text = data[124:288], sep = "\t", header = TRUE, row.names = 1)
+
+## Copiem la informació de la primera fila i la eliminem de la martiu perquè no són dades, sino informació de quin grup pertany cada subjecte
+primera_fila <-data_matrix[1,]
+data_matrix <- data_matrix[-1,]
+
+## Canviem el nom de les columnes, passem a tenir només el nom dels individus, a tenir a quin grup pertanyen i assignem un codi
+colnames(data_matrix) <-  paste(c(rep("Benign MS",13),rep("SPMS",20)), c("01", "02", "03","04","05","06","07","08","09","10","11","12","13","01", "02","03","04","05","06","07","08","09","10","11","12","13","14","15","16","17","18","19","20"), sep="")
+
+## Modifiquem una mica els noms de les files perquè no quedin noms tan llargs
+noms <- str_extract(rownames(data_matrix), "^[^;]+")
+rownames(data_matrix) <- noms
+data_matrix <- as.data.frame(apply(data_matrix,2,as.numeric))
+rownames(data_matrix) <- noms
+
+
+# A partir de la fila 292 trobem les metadates dels metabòlits
+
+metabolite_metadata <- read.table(text = data[292:455], sep = "\t", header = TRUE, row.names = 1,quote = "",fill=T)
+metabolite_metadata <- cbind(rownames(metabolite_metadata),metabolite_metadata)
+rownames(metabolite_metadata) <- NULL
+
+
+# De la fila 67-100 troben la informació de les covariables dels individus
+#Extraer información de individuos y factores 
+sample_metadata <- read.table(text = data[67:100], sep = "\t", header = F, row.names = 2)
+## Eliminem la primera columna perquè no ens interesa
+sample_metadata <- sample_metadata[,-1]
+
+## Separem la columna de totes els factors en funció de ;
+sample_metadata <- sample_metadata %>%
+  separate(col = 3, into = c("Age", "BMI", "Gender", "Race"), sep = "; ", extra = "merge") %>%
+  mutate(Age = gsub("Age=", "", Age),
+         BMI = gsub("BMI kg/m2=", "", BMI),
+         Gender = gsub("Gender=", "", Gender),
+         Race = gsub("Race=", "", Race))
+
+
+## Canviem UNKNOWN per NA
+sample_metadata <- sample_metadata %>% mutate(Age = if_else(Age=="UNKNOWN",NA,Age),
+                                              BMI = if_else(BMI=="UNKNOWN",NA,BMI),
+                                              Gender = if_else(Gender=="UNKNOWN",NA,Gender),
+                                              Race = if_else(Race=="UNKNOWN",NA,Race))
+
+colnames(sample_metadata) <- c("Subject","Tipus MS","Age","BMI","Gender","Race")
+
+rownames(sample_metadata) <- NULL
+sample_metadata$`Tipus MS` <- as.factor(str_extract(sample_metadata$`Tipus MS`, "(?<=:).*"))
+
+
+# Desde la fila 1 a la fila 122, hi pot haver informació de l'experiment, així que la seleccione,
+general_metadata <-  read.table(text = data[c(5:15,52:66,106:122)], sep = "\t", header = F)
+general_metadata$V2 <- paste0(general_metadata$V1,": ",general_metadata$V2)
+colnames(general_metadata)[2] <- "Experiment"
+
+## Podem veure alguna de les matrius que hem obtingut
+
+head(data_matrix)[1:4,c(1,3,5,14,25,33)]
+
+head(metabolite_metadata)[1:4,]
+
+#Guardem les metadades.
+
+#metadades <- bind_rows(data.frame(metadata(se)), data.frame(colData(se)), data.frame(rowData(se)))
+#metadades[39:nrow(metadades),1] <- rownames(metadades)[39:nrow(metadades)]
+#write_csv(metadades, "metadades_data.csv")
+
+
+
+```
+
+
+
+### 3.2. Creació SummarizedExperiment
+```{r echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+
+## Creem l'objecte SummarizedExperiment
+se <- SummarizedExperiment(
+  assays = list(counts = as.matrix(data_matrix)),
+  rowData = metabolite_metadata,
+  colData = sample_metadata,
+  metadata = list(general_metadata = general_metadata$Experiment)
+)
+
+
+## Donat a que ens poden ser útils per després, podem crear dos dades més a partir
+## de les dades obtingudes, en primer lloc les podem 'escalar' aplicant logaritmes
+## i també calcularem la abundància relativa 'across groups' per a poder 
+## replicar un dels boxplots que realitzen
+
+se <- SummarizedExperiment(
+  assays = list(counts = as.matrix(data_matrix),escalados = t(log(t(assays(se)$counts)))),
+  rowData = metabolite_metadata,
+  colData = sample_metadata,
+  metadata = list(general_metadata = general_metadata$Experiment)
+)
+
+abund_real <- function(data){
+  suma<- sum(data)
+  abundance_rel <- data/suma*100
+  return(c(abundance_rel))
+}
+med_vals <- apply(t(assays(se)$escalados),2,median)
+data_rel <- as.data.frame(sweep(t(assays(se)$escalados),2,med_vals,"-"))
+data_rel <- as.data.frame(t(data_rel))
+
+se <- SummarizedExperiment(
+  assays = list(counts = as.matrix(data_matrix),escalados = t(log(t(assays(se)$counts)))
+                ,log_abund=data_rel),
+  rowData = metabolite_metadata,
+  colData = sample_metadata,
+  metadata = list(general_metadata = general_metadata$Experiment)
+)
+```
+
+```{r}
+se
+
+```
+El nostre objecte **SummarizedExperiment** conté un conjunt de metadades (informació de l'experiment), 3 conjunts de dades (counts, escalados i log_abund), rowData és la informació de sobre els metabolits i colData són les covariables dels individus.
+
+Els objectes **SummarizedExperiment** són molt similars en molts d'aspectes als **ExpressionSet**, una de les diferències és que SummarizedExperiment és més flexible en quant a la informació de les files, a més és compatiable amb GRanges cosa que facilita el tractament de dades genòmiques amb coordanades. La principal diferència però, la trobem en que SummarizedExperiment permet guardar múltiples matrius de dades a 'assays()'.
+
+
+### 3.3. Anàlisis exploratori de dades
+
+
+Una vegada fet l'extracció de les dades i la informació, podem procedir a realitzar una exploració bàsica.
+
+```{r fig.align='center'}
+boxplot(assays(se)$counts,
+        las = 2,
+        names = colData(se)$`Tipus MS`, 
+        cex.axis=0.8,
+        main="Distribució dels valors dels metabolits"
+
+)
+```
+Veiem que les dades són asimètriques, per tant provarem d'aplicar logaritmes.
+
+```{r fig.align='center', echo=FALSE,fig.height=4}
+boxplot(assays(se)$escalados,
+        las = 2,
+        names = colData(se)$`Tipus MS`,  
+        cex.axis=0.8,
+        main="Distribució dels valors dels metabolits escalats Log"
+
+)
+```
+Amb els logaritmes aplicats continuem veient una asimetría positiva, però queda bastant millor que sense escalar. Per tant treballaríem amb les dades escalades.
+
+### 3.4. Anàlisis multivariant
+
+En primer lloc realitzarem un anàlisis de components principals que ens faciliti la visualització de les dades per a detectar posibles patrons que no es puguin detectar a simple vista.
+
+
+```{r fig.align='center',fig.height=3.8}
+pcX<-prcomp(t(assays(se)$escalados), scale=FALSE) # Ja s'han escalat les dades
+loads<- round(pcX$sdev^2/sum(pcX$sdev^2)*100,1)
+
+summary(pcX)$importance[,1:4]
+colores <- c("red", "forestgreen")  
+
+xlab<-c(paste("PC1",loads[1],"%"))
+ylab<-c(paste("PC2",loads[2],"%"))
+plot(pcX$x[,1:2],xlab=xlab,ylab=ylab, col=colores, 
+     main ="Principal components (PCA)")
+names2plot<-colnames(se)
+
+text(pcX$x[,1],pcX$x[,2],names2plot, pos=3, cex=.6)
+```
+
+Les dues primeres components expliquen el 41% de la variabilitat de les dades, ens inidica que les dues components principals no capturen la major part de l'estructura de les dades, ja que queda un 59% de variabilitat per explicar. Potser existeix un soroll en les dades que dificulta l'explicació de la variabilitat a partir de PCA.
+
+
+
+```{r, fig.align='center',fig.height=3.5}
+clust.euclid.average <- hclust(dist(t(assays(se)$escalados)),method="average")
+plot(clust.euclid.average, hang=-1,,xlab="Dendograma")
+```
+Si realitzem el clúster geràrquic i observem el dendograma, veiem que tot i haver-hi molts de subgrups, almenys els subjectes del mateix tipus si que estan pròxims entre ells.
+
+
+### 3.5. Relative log abundance plots (across groups)
+
+Generem el gràfic d'abundància logarítmica relativa, **entre grups**. A simple vista no veiem molta diferència en la distribució entre els 2 grups.
+```{r fig.align='center',message=FALSE,error=FALSE,warning=FALSE}
+library(ggplot2)
+library(reshape2) 
+
+boxplot(assays(se)$log_abund,
+        las = 2,
+        col = colores[as.numeric(colData(se)$`Tipus MS`)], 
+        ylab = "Log Abundance",
+        ylim = c(-4, 4)      
+
+)
+
+# Añade la línea horizontal en y = 0
+abline(h = 0, col = "black", lty = 1, lwd = 1)  
+```
+### 3.6. Comparació de metabolics entre grups 
+
+Comparem l'expressió dels diferents metabòlits en funció dels dos grups d'esclerosis múltiple. El primer gràfic surten molts de metabòlits significatius (n=35) però el pvalor no està ajustat per cap correció de comparacions múltiples. Un cop ajustem per bonferroni només trobem 4 metabòlits significatius (n=4).
+```{r fig.align='center',message=FALSE,error=FALSE,warning=FALSE,echo=FALSE}
+ttest=function(x){tt=t.test(x[1:13],x[14:33])
+return(c(tt$statistic,
+         tt$p.value,
+         tt$estimate[2]/tt$estimate[1]))
+}
+fc=function(x){tt=t.test(x[1:13],x[14:33])
+return(c(tt$statistic,
+         tt$p.value,
+         tt$estimate[1]/tt$estimate[2]))
+}
+
+ans <- apply(assays(se)$escalados,1,ttest)
+ts <- ans[1,]
+
+pvals<-ans[2,]
+pvals_adj <- p.adjust(pvals,method = "BH")
+fc <-  apply(assays(se)$counts,1,ttest)
+
+fc2 <- log2(fc[3,])
+
+data_grafic <- data.frame(meta=rownames(se),log2FC=fc2,log10p=(pvals))
+library(EnhancedVolcano)
+
+p1 <- EnhancedVolcano(data_grafic,
+    lab = data_grafic$meta,  
+    x = 'log2FC',  
+    y = 'log10p',  
+    pCutoff = 0.05,  
+    FCcutoff = 0.585, 
+    title = 'Volcano Plot',
+    selectLab = data_grafic$meta[data_grafic$log10p < 0.05], 
+    subtitle = 'Diferencial de Expresión',
+    pointSize = 3.0,  
+    labSize = 2.5,   
+    colAlpha = 0.8,   
+    col = c("black", "blue", "red", "orange"),
+    ylim = c(0,4),
+    xlim=c(-2,2.5),   
+    drawConnectors = TRUE, 
+    widthConnectors = 0.5,  
+    colConnectors = "grey50", 
+    boxedLabels = TRUE, 
+    max.overlaps = 20  
+)
+p1
+```
+
+
+```{r fig.align='center',message=FALSE,error=FALSE,warning=FALSE,echo=FALSE}
+data_grafic <- data.frame(meta=rownames(se),log2FC=fc2,log10p=(pvals_adj))
+
+p2 <- EnhancedVolcano(data_grafic,
+    lab = data_grafic$meta,  
+    x = 'log2FC',  
+    y = 'log10p',  
+    pCutoff = 0.05,  
+    FCcutoff = 0.585, 
+    title = 'Volcano Plot',
+    selectLab = data_grafic$meta[data_grafic$log10p < 0.05], 
+    subtitle = 'Diferencial de Expresión, p adjusted',
+    pointSize = 3.0,  
+    labSize = 2.5,   
+    colAlpha = 0.8,   
+    col = c("black", "blue", "red", "orange"),
+    ylim = c(0,4),
+    xlim=c(-2,2.5),   
+    drawConnectors = TRUE, 
+    widthConnectors = 0.5,  
+    colConnectors = "grey50", 
+    boxedLabels = TRUE, 
+    max.overlaps = 20  
+)
+p2
+```
+
+
+
+
+## 4. Discussió/Conclussió
+
+L'anàlisis exploratori realitzat ens ha posat de manifest que existeixen diverses fonts de variació. Part d'aquesta l'hem pogut corregir de certa manera aplicant logaritmes a les dades.
+També hem pogut veure que no hi ha evidents problemes en les dades, ja que les distribucions d'aquestes són similars entre elles i no hi ha valors perduts o zeros. Amb els gràfics i anàlisis multivariants que hem realitzat (Dendograma i PCA), no hem sigut capaços de trobar o distingir en precisió la variabilitat de les mostrar, ni de crear grups que en un primer moment podíem arribar a pensar que es crearíen en base al diagnòstic del subjecte (tipus d'esclerosis)
+
+Donat que l'anàlisis que hem realitzat (volcano plot i abundància relativa) dóna resultats similars als que podem veure a l'anàlisis de [l'estudi](https://www.metabolomicsworkbench.org/data/stats_toolbox.php?STUDY_ID=ST000688), podríem suposar que les dades no s'han tractat gaire més.
+
+De cara a següents pasos es podrien estudiar els metabòlits que han sortit significatius i mirar en quins processos biològics estan implicats.
+
+## 5. Referències
+
+Enllaç a Github: https://github.com/jmsancho18/Martinez-Sancho-Joan-PEC1.git
+
+
+```{r echo=FALSE,eval=FALSE,message=FALSE,error=FALSE,warning=FALSE}
+knitr::purl("PAC1.Rmd")
+```
+
