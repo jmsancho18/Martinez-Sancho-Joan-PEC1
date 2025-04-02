@@ -62,7 +62,7 @@ L'exploració es portarà a terme seguint les activitats que s'han realitzat dur
 
 ### 3.1. Obtenció de dades
 
-Podeu trobar el codi de la obtenció de dades en el següent [Github] (https://github.com/jmsancho18/Martinez-Sancho-Joan-PEC1.git). Aqui podeu veure per exemple la matriu de dades de metabòlits (no tota, nomes algunes columnes i files) i les seves metadades. Però també s'han descarregat les dades de les covariables i informació de l'experiment.
+Podeu trobar el codi de la obtenció de dades en el següent [Github](https://github.com/jmsancho18/Martinez-Sancho-Joan-PEC1.git). Aqui podeu veure per exemple la matriu de dades de metabòlits (no tota, nomes algunes columnes i files) i les seves metadades. Però també s'han descarregat les dades de les covariables i informació de l'experiment.
 ```{r echo=FALSE,message=FALSE,error=FALSE,warning=FALSE}
 library(stringr)
 library(dplyr)
